@@ -1,0 +1,11 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "GPS Speedometer",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "GPSSM",
+  "start_url": "/",
+  "theme_color": "#0b1020"
+}
