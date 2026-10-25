@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>GPS Speedometer</title>
+<!-- Leaflet CSS for Map rendering -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0b1020;
+  --panel:#121a2e;
+  --line:#26334e;
+  --text:#f4f7ff;
+  --muted:#91a0bd;
+  --cyan:#48e0d0;
+  --blue:#6a8cff;
+  --orange:#ffb454;
+  --fg: var(--cyan);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  background:radial-gradient(ellipse at top,#172543 0%,var(--bg) 58%);
+  color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  padding:16px 12px 32px;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+main{max-width:900px;margin:auto}
+
+/* Top Header & Navigation */
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.brand-area{display:flex;flex-direction:column}
+.brand{font-weight:800;letter-spacing:.08em;font-size:12px;color:var(--fg)}
+h1{font-size:clamp(20px,4vw,28px);margin:2px 0 0}
+
+.top-bar-right{display:flex;align-items:center;gap:10px}
+.status{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;background:#121a2e;padding:6px 10px;border-radius:20px;border:1px solid var(--line)}
+.dot{width:7px;height:7px;border-radius:50%;background:#73809a}
+.dot.live{background:var(--fg);box-shadow:0 0 10px var(--fg)}
+
+/* 3-line Hamburger Menu Button */
+.menu-btn{background:#1b2944;border:1px solid var(--line);border-radius:12px;width:40px;height:40px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;cursor:pointer;padding:0}
+.menu-btn span{display:block;width:18px;height:2px;background:var(--text);border-radius:2px;transition:0.3s}
+
+/* Tabs Navigation Bar */
+.tabs-nav{display:flex;background:#0f1729;border:1px solid var(--line);border-radius:14px;padding:4px;gap:4px;margin-bottom:16px}
+.tab-btn{flex:1;background:transparent;border:none;color:var(--muted);font-weight:700;font-size:13px;padding:10px;border-radius:10px;cursor:pointer;transition:all 0.2s ease;text-align:center}
+.tab-btn.active{background:var(--fg);color:#06151a}
+
+/* Tab Content Panes */
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.card{background:linear-gradient(145deg,#17223aee,#10182aee);border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 12px 35px #0002}
+.speed-card{grid-column:span 3;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:340px}
+.speed-label,.label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;font-weight:700}
+
+/* Analog Gauge Styling */
+.dial{position:relative;width:min(65vw,260px);aspect-ratio:1;margin:12px auto 4px;display:grid;place-items:center}
+.dial svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.track{fill:none;stroke:var(--line);stroke-width:8;stroke-linecap:round;stroke-dasharray:75 25;transform:rotate(135deg);transform-origin:50px 50px}
+.arc{fill:none;stroke:var(--fg);stroke-width:8;stroke-linecap:round;stroke-dasharray:0 100;filter:drop-shadow(0 0 7px var(--fg));transition:stroke-dasharray .25s ease;transform:rotate(135deg);transform-origin:50px 50px}
+.needle{stroke:var(--fg);stroke-width:3.5;stroke-linecap:round;filter:drop-shadow(0 0 4px var(--fg))}
+.center-cap{fill:var(--fg)}
+.tick{stroke:var(--muted);stroke-width:1.5;opacity:0.6}
+
+/* Speed Display underneath the gauge */
+.speed-display{text-align:center;position:relative;z-index:2}
+.speed-display.analog-mode{margin-top:10px;margin-bottom:6px}
+.speed-number{font-size:clamp(50px,12vw,80px);font-weight:800;letter-spacing:-.06em;line-height:1;font-variant-numeric:tabular-nums}
+.unit{font-size:14px;color:var(--muted);margin-top:4px}
+.substatus{font-size:12px;color:var(--muted);margin-top:10px;text-align:center}
+
+.metric{min-height:140px;display:flex;flex-direction:column;justify-content:space-between;gap:14px}
+.metric .value{font-size:clamp(22px,4vw,34px);font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.metric .unit{margin:4px 0 0}
+.accent{color:var(--fg)}.orange{color:var(--orange)}.blue{color:#9aafff}
+
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;justify-content:center}
+button,select,input[type="color"]{font:inherit;border-radius:12px;border:1px solid #354463;background:#1b2944;color:var(--text);padding:10px 14px}
+button{cursor:pointer;font-weight:700;flex:1;min-width:110px}
+button.primary{background:var(--fg);border-color:var(--fg);color:#06151a}
+button.resume{background:var(--orange);border-color:var(--orange);color:#06151a}
+button.danger{background:#ff5252;border-color:#ff5252;color:#ffffff}
+button:disabled{opacity:.45;cursor:not-allowed}
+
+/* Map Tab Styles */
+.map-full-card{grid-column:span 3;min-height:480px;display:flex;flex-direction:column;gap:12px;position:relative}
+.map-container{width:100%;height:410px;border-radius:14px;overflow:hidden;border:1px solid var(--line);z-index:1}
+
+/* Mini Speedometer Overlay on Map */
+.map-overlay-speed{position:absolute;top:24px;right:24px;background:#0b1020ee;border:1px solid var(--fg);border-radius:14px;padding:12px 18px;z-index:1000;box-shadow:0 8px 25px #0006;text-align:center;backdrop-filter:blur(6px)}
+.map-overlay-speed .mini-num{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.map-overlay-speed .mini-unit{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* Settings Modal Drawer */
+.modal-backdrop{position:fixed;inset:0;background:#0008;z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.modal-backdrop.open{display:flex}
+.modal-content{background:#121a2e;border:1px solid var(--line);border-radius:24px;width:100%;max-width:440px;padding:24px;box-shadow:0 20px 40px #000c;animation:modalPop 0.25s ease}
+@keyframes modalPop{from{transform:scale(0.95);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-header h2{font-size:18px;margin:0}
+.close-modal{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0;min-width:auto}
+
+.setting-group{margin-bottom:16px}
+.setting-group label{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:6px}
+.setting-group select, .setting-group input[type="color"]{width:100%;height:44px}
+.color-row{display:flex;gap:10px}
+.color-row > div{flex:1}
+
+.note{color:var(--muted);font-size:12px;line-height:1.55;margin:16px 2px 0}
+
+@media(max-width:768px){
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .speed-card,.map-full-card{grid-column:span 2}
+}
+@media(max-width:500px){
+  .grid{grid-template-columns:1fr}
+  .speed-card,.map-full-card{grid-column:span 1}
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand-area">
+      <div class="brand">FIELD / GPS TOOLS</div>
+      <h1>GPS Speedometer</h1>
+    </div>
+    <div class="top-bar-right">
+      <div class="status"><span class="dot" id="dot"></span><span id="status">GPS not started</span></div>
+      <button class="menu-btn" id="settingsToggle" aria-label="Open Settings Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" data-tab="tab-analog">Analog Meter</button>
+    <button class="tab-btn" data-tab="tab-digital">Digital Meter</button>
+    <button class="tab-btn" data-tab="tab-map">Live Map</button>
+  </div>
+
+  <!-- TAB 1: ANALOG METER -->
+  <div class="tab-pane active" id="tab-analog">
+    <section class="grid">
+      <div class="card speed-card">
+        <div class="speed-label">Live Ground Speed</div>
+        <div class="dial" aria-label="Analog speed gauge">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="track" cx="50" cy="50" r="42" pathLength="100"/>
+            <circle class="arc" id="arcAnalog" cx="50" cy="50" r="42" pathLength="100"/>
+            <g id="ticksGroup"></g>
+            <g id="needleGroup" transform="rotate(-135 50 50)">
+              <line id="needle" class="needle" x1="50" y1="50" x2="50" y2="17" />
+            </g>
+            <circle class="center-cap" cx="50" cy="50" r="4" />
+          </svg>
+        </div>
+
+        <!-- Positioned at the bottom of the dial gauge -->
+        <div class="speed-display analog-mode">
+          <div class="speed-number" id="speedAnalog">0.0</div>
+          <div class="unit speedUnitText">km/h</div>
+        </div>
+
+        <div class="substatus" id="accuracyAnalog">Waiting for GPS signal…</div>
+        <div class="actions" style="width:100%;max-width:420px">
+          <button class="primary startBtn">Start GPS</button>
+          <button class="pauseBtn" disabled>Pause</button>
+          <button class="danger stopTripBtn" disabled>End Trip</button>
+        </div>
+      </div>
+
+      <div class="card metric">
+        <div class="label">Top Speed</div>
+        <div><div class="value orange topSpeedVal">0.0</div><div class="unit topUnitText">km/h · session</div></div>
+        <button class="resetTop" style="min-width:0;width:100%;padding:9px">Reset record</button>
+      </div>
+      <div class="card metric">
+        <div class="label">Average Speed</div>
+        <div><div class="value blue avgSpeedVal">0.0</div><div class="unit avgUnitText">km/h · elapsed</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Total Distance</div>
+        <div><div class="value accent distVal">0.000</div><div class="unit distUnitText">km</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Elapsed Time</div>
+        <div><div class="value elapsedVal">00:00:00</div><div class="unit">since start</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Sea Level Altitude</div>
+        <div><div class="value accent altVal">0.0</div><div class="unit altUnitText">m (MSL)</div></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- TAB 2: DIGITAL METER -->
+  <div class="tab-pane" id="tab-digital">
+    <section class="grid">
+      <div class="card speed-card" style="min-height: 260px;">
+        <div class="speed-label">Live Ground Speed (Digital)</div>
+        <div class="speed-display" style="margin: 20px 0;">
+          <div class="speed-number" id="speedDigital">0.0</div>
+          <div class="unit speedUnitText">km/h</div>
+        </div>
+        <div class="substatus" id="accuracyDigital">Waiting for GPS signal…</div>
+        <div class="actions" style="width:100%;max-width:420px">
+          <button class="primary startBtn">Start GPS</button>
+          <button class="pauseBtn" disabled>Pause</button>
+          <button class="danger stopTripBtn" disabled>End Trip</button>
+        </div>
+      </div>
+
+      <div class="card metric">
+        <div class="label">Top Speed</div>
+        <div><div class="value orange topSpeedVal">0.0</div><div class="unit topUnitText">km/h · session</div></div>
+        <button class="resetTop" style="min-width:0;width:100%;padding:9px">Reset record</button>
+      </div>
+      <div class="card metric">
+        <div class="label">Average Speed</div>
+        <div><div class="value blue avgSpeedVal">0.0</div><div class="unit avgUnitText">km/h · elapsed</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Total Distance</div>
+        <div><div class="value accent distVal">0.000</div><div class="unit distUnitText">km</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Elapsed Time</div>
+        <div><div class="value elapsedVal">00:00:00</div><div class="unit">since start</div></div>
+      </div>
+      <div class="card metric">
+        <div class="label">Sea Level Altitude</div>
+        <div><div class="value accent altVal">0.0</div><div class="unit altUnitText">m (MSL)</div></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- TAB 3: LIVE MAP VIEW -->
+  <div class="tab-pane" id="tab-map">
+    <section class="grid">
+      <div class="card map-full-card">
+        <div class="label">Live Map & Location Tracking</div>
+        
+        <!-- Overlay Speed Display -->
+        <div class="map-overlay-speed">
+          <div class="mini-num" id="speedMini">0.0</div>
+          <div class="mini-unit speedUnitText">km/h</div>
+        </div>
+
+        <div id="map" class="map-container"></div>
+        <div class="actions" style="margin-top:0">
+          <button class="primary startBtn">Start GPS</button>
+          <button class="pauseBtn" disabled>Pause</button>
+          <button class="danger stopTripBtn" disabled>End Trip</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <p class="note">For best results, allow location access and use this page over HTTPS (or localhost). Use the 3-line menu on the top right to customize themes, background colors, and unit metrics anytime.</p>
+</main>
+
+<!-- Settings Drawer Modal -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Preferences & Settings</h2>
+      <button class="close-modal" id="closeModal">&times;</button>
+    </div>
+
+    <div class="setting-group">
+      <label for="speedUnitSelect">Speed Unit</label>
+      <select id="speedUnitSelect">
+        <option value="kmh">km/h</option>
+        <option value="mph">mph</option>
+        <option value="ms">m/s</option>
+        <option value="knots">knots (kts)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label for="distUnitSelect">Distance & Altitude Unit</label>
+      <select id="distUnitSelect">
+        <option value="km">Kilometers (km) & Meters (m)</option>
+        <option value="ft">Miles (mi) & Feet (ft)</option>
+        <option value="m">Meters (m)</option>
+        <option value="nm">Nautical Miles (NM) & Feet (ft)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label>Theme Colors</label>
+      <div class="color-row">
+        <div>
+          <label style="font-size:10px;margin-bottom:4px;color:var(--muted)">Background</label>
+          <input type="color" id="bgColor" value="#0b1020">
+        </div>
+        <div>
+          <label style="font-size:10px;margin-bottom:4px;color:var(--muted)">Accent / Hand</label>
+          <input type="color" id="fgColor" value="#48e0d0">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet JavaScript -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const els = {
+    speedAnalog:$('speedAnalog'), speedDigital:$('speedDigital'), speedMini:$('speedMini'),
+    accuracyAnalog:$('accuracyAnalog'), accuracyDigital:$('accuracyDigital'),
+    dot:$('dot'), status:$('status'), arcAnalog:$('arcAnalog'), needle:$('needle'),
+    needleGroup:$('needleGroup'),
+    speedUnitSelect:$('speedUnitSelect'), distUnitSelect:$('distUnitSelect'),
+    bgColor:$('bgColor'), fgColor:$('fgColor'), ticksGroup:$('ticksGroup'),
+    settingsModal:$('settingsModal'), settingsToggle:$('settingsToggle'), closeModal:$('closeModal')
+  };
+
+  const setAllText = (selector, val) => document.querySelectorAll(selector).forEach(el => el.textContent = val);
+
+  let watchId = null, startedAt = 0, elapsedBefore = 0, timer = null;
+  let totalMeters = 0, topKmh = 0, latestKmh = 0, latestAltMeters = null, lastGood = null;
+  let active = false;
+  let isPaused = false;
+
+  // Leaflet Map Setup
+  let map = null, userMarker = null, pathPolyline = null, pathCoordinates = [];
+
+  function initMap() {
+    map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    pathPolyline = L.polyline([], { color: getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#48e0d0', weight: 4 }).addTo(map);
+  }
+  initMap();
+
+  function updateMapLocation(lat, lng) {
+    if (!map) return;
+    const latLng = [lat, lng];
+    if (!userMarker) {
+      userMarker = L.marker(latLng).addTo(map).bindPopup('Current Location').openPopup();
+      map.setView(latLng, 16);
+    } else {
+      userMarker.setLatLng(latLng);
+      map.panTo(latLng);
+    }
+    pathCoordinates.push(latLng);
+    pathPolyline.setLatLngs(pathCoordinates);
+  }
+
+  const MAX_ACCURACY_METERS = 35;
+  const MIN_DISTANCE_METERS = 3;
+  const MAX_REASONABLE_SPEED_MPS = 70;
+
+  // Render Gauge Dial Ticks
+  function generateTicks() {
+    els.ticksGroup.innerHTML = '';
+    const totalTicks = 27;
+    for (let i = 0; i <= totalTicks; i++) {
+      const angle = -135 + (i * (270 / totalTicks));
+      const rad = (angle - 90) * Math.PI / 180;
+      const isMajor = i % 3 === 0;
+      const r1 = 42;
+      const r2 = isMajor ? 36 : 39;
+
+      const x1 = 50 + r1 * Math.cos(rad);
+      const y1 = 50 + r1 * Math.sin(rad);
+      const x2 = 50 + r2 * Math.cos(rad);
+      const y2 = 50 + r2 * Math.sin(rad);
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('class', 'tick');
+      if (isMajor) line.style.strokeWidth = '2';
+      els.ticksGroup.appendChild(line);
+    }
+  }
+  generateTicks();
+
+  // Tab Switching
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      
+      btn.classList.add('active');
+      const tabId = btn.getAttribute('data-tab');
+      $(tabId).classList.add('active');
+
+      if (tabId === 'tab-map' && map) {
+        setTimeout(() => map.invalidateSize(), 150);
+      }
+    });
+  });
+
+  // Settings Modal Control
+  els.settingsToggle.addEventListener('click', () => els.settingsModal.classList.add('open'));
+  els.closeModal.addEventListener('click', () => els.settingsModal.classList.remove('open'));
+  els.settingsModal.addEventListener('click', (e) => { if (e.target === els.settingsModal) els.settingsModal.classList.remove('open'); });
+
+  // Speed & Distance Conversion Helpers
+  function getSpeedConversionFactor() {
+    switch (els.speedUnitSelect.value) {
+      case 'mph': return 0.621371;
+      case 'knots': return 0.539957;
+      case 'ms': return 1 / 3.6;
+      default: return 1;
+    }
+  }
+
+  function speedUnitText() {
+    switch (els.speedUnitSelect.value) {
+      case 'mph': return 'mph';
+      case 'knots': return 'kts';
+      case 'ms': return 'm/s';
+      default: return 'km/h';
+    }
+  }
+
+  function getDistanceConversionFactor() {
+    switch (els.distUnitSelect.value) {
+      case 'ft': return 0.000621371;
+      case 'nm': return 0.000539957;
+      case 'm': return 1;
+      default: return 0.001;
+    }
+  }
+
+  function distanceUnitText() {
+    switch (els.distUnitSelect.value) {
+      case 'ft': return 'mi';
+      case 'nm': return 'NM';
+      case 'm': return 'm';
+      default: return 'km';
+    }
+  }
+
+  function altitudeUnitText() {
+    return (els.distUnitSelect.value === 'ft' || els.distUnitSelect.value === 'nm') ? 'ft (MSL)' : 'm (MSL)';
+  }
+
+  function displaySpeed(kmh) { return (kmh * getSpeedConversionFactor()).toFixed(1); }
+  
+  function displayDistance(m) {
+    if (els.distUnitSelect.value === 'm') return m.toFixed(0);
+    const converted = m * getDistanceConversionFactor();
+    return converted.toFixed(3);
+  }
+
+  function displayAltitude(m) {
+    if (m === null) return '—';
+    const isFeet = els.distUnitSelect.value === 'ft' || els.distUnitSelect.value === 'nm';
+    const converted = isFeet ? m * 3.28084 : m;
+    return converted.toFixed(1);
+  }
+
+  function duration(ms) {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    return [Math.floor(sec/3600), Math.floor((sec%3600)/60), sec%60]
+      .map(n => String(n).padStart(2,'0')).join(':');
+  }
+
+  function elapsedMs() { return elapsedBefore + (active ? Date.now() - startedAt : 0); }
+
+  function getMaxGaugeSpeed() {
+    switch (els.speedUnitSelect.value) {
+      case 'knots': return 90;
+      case 'ms': return 45;
+      case 'mph': return 100;
+      default: return 160;
+    }
+  }
+
+  function render() {
+    const currentSpeed = latestKmh * getSpeedConversionFactor();
+    const maxGaugeSpeed = getMaxGaugeSpeed();
+    
+    const formattedSpeed = displaySpeed(latestKmh);
+    els.speedAnalog.textContent = formattedSpeed;
+    els.speedDigital.textContent = formattedSpeed;
+    els.speedMini.textContent = formattedSpeed;
+
+    const formattedTop = displaySpeed(topKmh);
+    setAllText('.topSpeedVal', formattedTop);
+
+    const hours = elapsedMs() / 3600000;
+    const avgKmh = hours > 0 ? (totalMeters / 1000) / hours : 0;
+    const formattedAvg = displaySpeed(avgKmh);
+    setAllText('.avgSpeedVal', formattedAvg);
+
+    const formattedDist = displayDistance(totalMeters);
+    setAllText('.distVal', formattedDist);
+
+    const formattedElapsed = duration(elapsedMs());
+    setAllText('.elapsedVal', formattedElapsed);
+
+    const formattedAlt = displayAltitude(latestAltMeters);
+    setAllText('.altVal', formattedAlt);
+
+    // Analog needle & arc update
+    const pct = Math.min(1, Math.max(0, currentSpeed / maxGaugeSpeed));
+    els.arcAnalog.style.strokeDasharray = `${pct * 75} 100`;
+    const needleAngle = -135 + (pct * 270);
+    
+    // Explicit SVG attribute rotation for perfect cross-browser stability
+    els.needleGroup.setAttribute('transform', `rotate(${needleAngle}, 50, 50)`);
+
+    // Unit labels update
+    const sUnit = speedUnitText();
+    const dUnit = distanceUnitText();
+    const aUnit = altitudeUnitText();
+
+    document.querySelectorAll('.speedUnitText').forEach(e => e.textContent = sUnit);
+    document.querySelectorAll('.topUnitText').forEach(e => e.textContent = `${sUnit} · session`);
+    document.querySelectorAll('.avgUnitText').forEach(e => e.textContent = `${sUnit} · elapsed`);
+    document.querySelectorAll('.distUnitText').forEach(e => e.textContent = dUnit);
+    document.querySelectorAll('.altUnitText').forEach(e => e.textContent = aUnit);
+  }
+
+  function setStatus(text, live=false) {
+    els.status.textContent = text;
+    els.dot.classList.toggle('live', live);
+  }
+
+  function updatePauseButtons(paused) {
+    document.querySelectorAll('.pauseBtn').forEach(b => {
+      if (paused) {
+        b.textContent = 'Resume';
+        b.classList.add('resume');
+      } else {
+        b.textContent = 'Pause';
+        b.classList.remove('resume');
+      }
+    });
+  }
+
+  function start() {
+    if (!('geolocation' in navigator)) {
+      setStatus('GPS unsupported');
+      return;
+    }
+    if (active) return;
+    active = true; 
+    isPaused = false;
+    startedAt = Date.now();
+    setStatus('Waiting for GPS…', true);
+    
+    document.querySelectorAll('.startBtn').forEach(b => b.disabled = true);
+    document.querySelectorAll('.pauseBtn').forEach(b => b.disabled = false);
+    document.querySelectorAll('.stopTripBtn').forEach(b => b.disabled = false);
+    updatePauseButtons(false);
+
+    timer = setInterval(render, 500);
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true, maximumAge: 0, timeout: 20000
+    });
+  }
+
+  function pause() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    if (active) elapsedBefore += Date.now() - startedAt;
+    active = false;
+    isPaused = true;
+    if (timer) clearInterval(timer);
+    timer = null;
+    latestKmh = 0;
+
+    updatePauseButtons(true);
+    setStatus('Paused');
+    render();
+  }
+
+  function togglePause() {
+    if (isPaused) {
+      start();
+    } else {
+      pause();
+    }
+  }
+
+  function stopTrip() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    if (timer) clearInterval(timer);
+    timer = null;
+
+    active = false;
+    isPaused = false;
+    elapsedBefore = 0;
+    startedAt = 0;
+    totalMeters = 0;
+    topKmh = 0;
+    latestKmh = 0;
+    lastGood = null;
+    pathCoordinates = [];
+    if (pathPolyline) pathPolyline.setLatLngs([]);
+
+    document.querySelectorAll('.startBtn').forEach(b => b.disabled = false);
+    document.querySelectorAll('.pauseBtn').forEach(b => b.disabled = true);
+    document.querySelectorAll('.stopTripBtn').forEach(b => b.disabled = true);
+    updatePauseButtons(false);
+
+    setStatus('Trip Ended');
+    render();
+  }
+
+  function onPosition(pos) {
+    const c = pos.coords;
+    const now = pos.timestamp || Date.now();
+    const accuracy = Number.isFinite(c.accuracy) ? c.accuracy : Infinity;
+    
+    updateMapLocation(c.latitude, c.longitude);
+
+    if (Number.isFinite(c.altitude) && c.altitude !== null) {
+      latestAltMeters = c.altitude;
+    }
+
+    if (accuracy > MAX_ACCURACY_METERS) {
+      els.accuracyAnalog.textContent = `Accuracy ±${Math.round(accuracy)}m — waiting for clearer fix`;
+      els.accuracyDigital.textContent = `Accuracy ±${Math.round(accuracy)}m — waiting for clearer fix`;
+      setStatus('Weak GPS signal', true);
+      return;
+    }
+
+    let kmh = Number.isFinite(c.speed) && c.speed >= 0 ? c.speed * 3.6 : null;
+    if (kmh === null && lastGood) {
+      const dt = (now - lastGood.time) / 1000;
+      if (dt > 0 && dt < 15) {
+        const d = haversine(lastGood.lat, lastGood.lon, c.latitude, c.longitude);
+        kmh = d / dt * 3.6;
+      }
+    }
+    if (kmh === null) kmh = 0;
+
+    if (kmh > MAX_REASONABLE_SPEED_MPS * 3.6) return;
+
+    if (lastGood) {
+      const dt = (now - lastGood.time) / 1000;
+      if (dt > 0 && dt < 15) {
+        const d = haversine(lastGood.lat, lastGood.lon, c.latitude, c.longitude);
+        const allowedNoise = Math.max(MIN_DISTANCE_METERS, accuracy * 0.18);
+        if (d > allowedNoise && d / dt <= MAX_REASONABLE_SPEED_MPS) totalMeters += d;
+      }
+    }
+
+    lastGood = {lat:c.latitude, lon:c.longitude, time:now};
+    latestKmh = kmh;
+    if (kmh > topKmh) topKmh = kmh;
+    
+    const accText = `GPS live · accuracy ±${Math.round(accuracy)} m`;
+    els.accuracyAnalog.textContent = accText;
+    els.accuracyDigital.textContent = accText;
+    setStatus('GPS live', true);
+    render();
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000, rad = n => n * Math.PI / 180;
+    const dLat = rad(lat2-lat1), dLon = rad(lon2-lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  function onError(err) {
+    const msg = 'Unable to read GPS position.';
+    els.accuracyAnalog.textContent = msg;
+    els.accuracyDigital.textContent = msg;
+    setStatus('GPS error', false);
+  }
+
+  // Color Pickers
+  els.bgColor.addEventListener('input', (e) => {
+    document.documentElement.style.setProperty('--bg', e.target.value);
+  });
+  els.fgColor.addEventListener('input', (e) => {
+    const color = e.target.value;
+    document.documentElement.style.setProperty('--fg', color);
+    document.documentElement.style.setProperty('--cyan', color);
+    if (pathPolyline) pathPolyline.setStyle({ color: color });
+  });
+
+  // Action Buttons
+  document.querySelectorAll('.startBtn').forEach(b => b.addEventListener('click', start));
+  document.querySelectorAll('.pauseBtn').forEach(b => b.addEventListener('click', togglePause));
+  document.querySelectorAll('.stopTripBtn').forEach(b => b.addEventListener('click', stopTrip));
+  document.querySelectorAll('.resetTop').forEach(b => b.addEventListener('click', () => { topKmh = latestKmh; render(); }));
+
+  els.speedUnitSelect.addEventListener('change', render);
+  els.distUnitSelect.addEventListener('change', render);
+
+  render();
+})();
+</script>
+</body>
+</html>
